@@ -1,163 +1,90 @@
-import random
-from joblib import dump, load
-import numpy as np
+import tkinter as tk
+from tkinter import messagebox
+from joblib import load
+import numpy as np 
 
-class TicTacToe:
-    def __init__(self, model):
-        self.board = []
-        self.model = model
 
-    def create_board(self):
-        for i in range(3):
-            row = []
-            for j in range(3):
-                row.append('-')
-            self.board.append(row)
+class TicTacToeGUI:
+    def __init__(self, root, model):
+        self.root = root
+        self.model_path = model
+        self.board = [['-' for _ in range(3)] for _ in range(3)]
+        self.current_player = 'X'
+        self.buttons = [[None for _ in range(3)] for _ in range(3)]
+        self.create_ui()
 
-    def get_random_first_player(self):
-        return random.randint(0, 1)
+    def create_ui(self):
+        for row in range(3):
+            for col in range(3):
+                button = tk.Button(self.root, text='', font=('Arial', 24), width=5, height=2,
+                                   command=lambda r=row, c=col: self.on_click(r, c))
+                button.grid(row=row, column=col)
+                self.buttons[row][col] = button
 
-    def fix_spot(self, row, col, player):
-        self.board[row][col] = player
+    def on_click(self, row, col):
+        if self.board[row][col] == '-':
+            if self.current_player == 'X':
+                self.board[row][col] = 'X'
+                self.buttons[row][col].config(text='X', state=tk.DISABLED)
+                if self.check_winner('X'):
+                    messagebox.showinfo("Game Over", "Player X wins!")
+                    self.reset_game()
+                    return
+                elif self.is_draw():
+                    messagebox.showinfo("Game Over", "It's a draw!")
+                    self.reset_game()
+                    return
+                self.current_player = 'O'
+                self.ai_turn()
 
-    def has_player_won(self, player):
-        n = len(self.board)
-        board_values = set()
-        for i in range(n):
-            for j in range(n):
-                board_values.add(self.board[i][j])
-            if board_values == {player}:
-                return True
-            else:
-                board_values.clear()
-        for i in range(n):
-            for j in range(n):
-                board_values.add(self.board[j][i])
+    def ai_turn(self):
+        flat_board = [1 if cell == 'X' else -1 if cell == 'O' else 0 for row in self.board for cell in row]
+        ai_input = np.array([flat_board], dtype=np.float64)
+        regressor = load(self.model_path)
+        ai_output = regressor.predict(ai_input)[0]
 
-            if board_values == {player}:
-                return True
-            else:
-                board_values.clear()
-        for i in range(n):
-            board_values.add(self.board[i][i])
-        if board_values == {player}:
-            return True
+        best_move = int(np.argmax(ai_output))
+        row, col = divmod(best_move, 3)
+
+        self.board[row][col] = 'O'
+        self.buttons[row][col].config(text='O', state=tk.DISABLED)
+
+        if self.check_winner('O'):
+            messagebox.showinfo("Game Over", "Player O wins!")
+            self.reset_game()
+        elif self.is_draw():
+            messagebox.showinfo("Game Over", "It's a draw!")
+            self.reset_game()
         else:
-            board_values.clear()
-        board_values.add(self.board[0][2])
-        board_values.add(self.board[1][1])
-        board_values.add(self.board[2][0])
-        if board_values == {player}:
+            self.current_player = 'X'
+
+    def check_winner(self, player):
+        for row in self.board:
+            if all(cell == player for cell in row):
+                return True
+        for col in range(3):
+            if all(self.board[row][col] == player for row in range(3)):
+                return True
+        if all(self.board[i][i] == player for i in range(3)) or all(self.board[i][2 - i] == player for i in range(3)):
             return True
-        else:
-            return False
+        return False
 
-    def is_board_filled(self):
-        for row in self.board:
-            for item in row:
-                if item == '-':
-                    return False
-        return True
+    def is_draw(self):
+        return all(cell != '-' for row in self.board for cell in row)
 
-    def swap_player_turn(self, player):
-        return 'X' if player == 'O' else 'O'
-
-    def show_board(self):
-        for row in self.board:
-            for item in row:
-                print(item, end=' ')
-            print()
-
-    def start(self):
-        self.create_board()
-        player = 'X' if self.get_random_first_player() == 1 else 'O'
-        game_over = False
-
-        while not game_over:
-            try:
-                self.show_board()
-                print(f'\nPlayer {player} turn')
-                row, col = 0, 0
-                # human player turn
-                if player == "X":
-                    row, col = list(
-                        map(int, input(
-                            'Enter row & column numbers to fix spot: ').split()))
-                    print()
-                # ai player turn
-                else:
-                    # get board as 2d array
-                    ai_input = []
-                    temp = []
-                    for arr in self.board:
-                        for i in range(len(arr)):
-                            if arr[i] == "-":
-                                temp.append(0)
-                            # -1
-                            elif arr[i] == "O":
-                                temp.append(-1)
-                            # +1
-                            elif arr[i] == "X":
-                                temp.append(1)
-                    ai_input.append(temp)
-                    ai_input = np.array(ai_input, dtype=np.float64)
-                    regressor = load(self.model)
-                    ai_output = regressor.predict(ai_input)
-                    # get index with best probability of winning
-                    curr_prob = -1
-                    best_move = 0
-                    for arr in ai_output:
-                        for i in range(len(arr)):
-                            if arr[i] > curr_prob:
-                                best_move = i
-                                curr_prob = arr[i]
-                    # get row and cols from 0-based index
-                    if best_move == 0:
-                        ai_ind = "1 1"
-                    elif best_move == 1:
-                        ai_ind  = "1 2"
-                    elif best_move == 2:
-                        ai_ind = "1 3"
-                    elif best_move == 3:
-                        ai_ind = "2 1"
-                    elif best_move == 4:
-                        ai_ind = "2 2"
-                    elif best_move == 5:
-                        ai_ind = "2 3"
-                    elif best_move == 6:
-                        ai_ind = "3 1"
-                    elif best_move == 7:
-                        ai_ind = "3 2"
-                    elif best_move == 8:
-                        ai_ind = "3 3"
-                    # print(f"{row} {col}")
-                    row, col = list(map(int, ai_ind.split()))
-                if col is None:
-                    raise ValueError(
-                        'not enough values to unpack (expected 2, got 1)')
-                self.fix_spot(row - 1, col - 1, player)
-                game_over = self.has_player_won(player)
-                if game_over:
-                    print(f'Player {player} wins the game!')
-                    continue
-                game_over = self.is_board_filled()
-                if game_over:
-                    print('Match Draw!')
-                    continue
-                player = self.swap_player_turn(player)
-            except ValueError as err:
-                print(err)
-        print()
-        self.show_board()
-
+    def reset_game(self):
+        self.board = [['-' for _ in range(3)] for _ in range(3)]
+        self.current_player = 'X'
+        for row in range(3):
+            for col in range(3):
+                self.buttons[row][col].config(text='', state=tk.NORMAL)
 
 if __name__ == '__main__':
-    chosen_model = int(input("CHOOSE MODEL:\n1. Multilayer Perceptron\n2. KNN\n3. Linear Regression\n"))
-    if chosen_model == 1:
-        path = 'mlp_reg.joblib'
-    elif chosen_model == 2:
-        path = 'knn_reg.joblib'
-    elif chosen_model == 3:
-        path = 'l_reg.joblib'
-    tic_tac_toe = TicTacToe(path)
-    tic_tac_toe.start()
+    model_choice = int(input("CHOOSE MODEL:\n1. Multilayer Perceptron\n2. KNN\n3. Linear Regression\n"))
+    model_path = 'mlp_reg.joblib' if model_choice == 1 else 'knn_reg.joblib' if model_choice == 2 else 'l_reg.joblib'
+
+    root = tk.Tk()
+    root.title("Tic Tac Toe")
+    game = TicTacToeGUI(root, model_path)
+    root.mainloop()
+
